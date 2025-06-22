@@ -1,0 +1,14 @@
+[package]
+name = "cells-renderer"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.97"
+bytemuck = { version = "1.22.0", features = ["derive"] }
+futures = { version = "0.3.31" }
+winit = { version = "0.30.9" }
+wgpu = { version = "24.0.3" }
+line_drawing = "1.0.1"
+
+[dev-dependencies]
