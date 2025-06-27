@@ -12,6 +12,8 @@ pub struct PainterDescriptor<Ink, F> {
     pub selected: Option<Ink>,
     pub key_fill: Option<KeyCode>,
     pub key_fill_random: Option<KeyCode>,
+    pub key_brush_expand: Option<KeyCode>,
+    pub key_brush_shrink: Option<KeyCode>,
 }
 
 impl<Ink, F> Default for PainterDescriptor<Ink, F> {
@@ -23,6 +25,8 @@ impl<Ink, F> Default for PainterDescriptor<Ink, F> {
             selected: None,
             key_fill: Some(KeyCode::KeyF),
             key_fill_random: Some(KeyCode::KeyR),
+            key_brush_expand: Some(KeyCode::ArrowUp),
+            key_brush_shrink: Some(KeyCode::ArrowDown),
         }
     }
 }
@@ -66,6 +70,11 @@ pub struct WithPainter<W, Ink, F> {
     mouse_pos_prev: Option<(u32, u32)>,
     mouse_pos: Option<(u32, u32)>,
     is_painting: bool,
+    brush_size: u32,
+}
+
+impl<W, Ink, F> WithPainter<W, Ink, F> {
+    const BRUSH_SIZE_MAX: u32 = 10;
 }
 
 impl<W: World, Ink, F> WithPainter<W, Ink, F>
@@ -80,6 +89,7 @@ where
             mouse_pos_prev: None,
             mouse_pos: None,
             is_painting: false,
+            brush_size: 0,
         }
     }
 }
@@ -98,20 +108,40 @@ where
             if let Some(ref ink) = self.desc.selected {
                 if let Some((x0, y0)) = self.mouse_pos_prev {
                     if let Some((x1, y1)) = self.mouse_pos {
+                        let ink = ink.clone();
                         for (x, y) in line_drawing::Bresenham::new(
                             (x0 as i32, y0 as i32),
                             (x1 as i32, y1 as i32),
                         ) {
-                            (self.desc.paint_fn.as_mut().unwrap())(
-                                &mut self.world,
-                                x as u32,
-                                y as u32,
-                                ink.clone(),
-                                image,
-                            );
+                            self.draw_at(image, x as u32, y as u32, &ink);
                         }
                     }
                 }
+            }
+        }
+    }
+
+    fn draw_at(&mut self, image: &mut WorldImage, x: u32, y: u32, ink: &Ink) {
+        let width = image.width();
+        let height = image.height();
+
+        let b = self.brush_size as i32;
+
+        for oy in -b..=b {
+            let Some(y_) = y.checked_add_signed(oy) else {
+                continue;
+            };
+            if y_ >= height {
+                continue;
+            }
+            for ox in -b..=b {
+                let Some(x_) = x.checked_add_signed(ox) else {
+                    continue;
+                };
+                if x_ >= width {
+                    continue;
+                }
+                (self.desc.paint_fn.as_mut().unwrap())(&mut self.world, x_, y_, ink.clone(), image);
             }
         }
     }
@@ -138,6 +168,16 @@ where
         for (key, ink) in &self.desc.palette {
             if is_pressed(&event, *key) {
                 self.desc.selected = Some(ink.clone());
+            }
+        }
+        if let Some(key_brush_expand) = self.desc.key_brush_expand {
+            if is_pressed(&event, key_brush_expand) && self.brush_size < Self::BRUSH_SIZE_MAX {
+                self.brush_size += 1;
+            }
+        }
+        if let Some(key_brush_shrink) = self.desc.key_brush_shrink {
+            if is_pressed(&event, key_brush_shrink) {
+                self.brush_size = self.brush_size.checked_sub(1).unwrap_or_default();
             }
         }
         if self.desc.paint_fn.is_some() {
