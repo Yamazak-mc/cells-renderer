@@ -5,15 +5,64 @@ use winit::{
     keyboard::KeyCode,
 };
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PainterDescriptor<Ink, F> {
+    pub palette: BTreeMap<KeyCode, Ink>,
+    pub paint_fn: Option<F>,
+    pub selected: Option<Ink>,
+    pub key_fill: Option<KeyCode>,
+    pub key_fill_random: Option<KeyCode>,
+}
+
+impl<Ink, F> Default for PainterDescriptor<Ink, F> {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            palette: BTreeMap::default(),
+            paint_fn: None,
+            selected: None,
+            key_fill: Some(KeyCode::KeyF),
+            key_fill_random: Some(KeyCode::KeyR),
+        }
+    }
+}
+
+impl<Ink, F> PainterDescriptor<Ink, F> {
+    #[inline]
+    pub fn palette(self, palette: BTreeMap<KeyCode, Ink>) -> Self {
+        Self { palette, ..self }
+    }
+
+    #[inline]
+    pub fn paint_fn(self, paint_fn: Option<F>) -> Self {
+        Self { paint_fn, ..self }
+    }
+
+    #[inline]
+    pub fn selected(self, selected: Option<Ink>) -> Self {
+        Self { selected, ..self }
+    }
+
+    #[inline]
+    pub fn key_fill(self, key_fill: Option<KeyCode>) -> Self {
+        Self { key_fill, ..self }
+    }
+
+    #[inline]
+    pub fn key_fill_random(self, key_fill_random: Option<KeyCode>) -> Self {
+        Self {
+            key_fill_random,
+            ..self
+        }
+    }
+}
+
 pub struct WithPainter<W, Ink, F> {
     world: W,
 
     // Configs
-    palette: BTreeMap<KeyCode, Ink>,
-    paint_fn: F,
+    desc: PainterDescriptor<Ink, F>,
 
-    // Painter state
-    selected: Option<Ink>,
     mouse_pos_prev: Option<(u32, u32)>,
     mouse_pos: Option<(u32, u32)>,
     is_painting: bool,
@@ -24,15 +73,10 @@ where
     F: Fn(&mut W, u32, u32, Ink, &mut WorldImage),
 {
     #[inline]
-    pub fn new<P>(world: W, palette: P, paint_fn: F, selected: Option<Ink>) -> Self
-    where
-        P: IntoIterator<Item = (KeyCode, Ink)>,
-    {
+    pub fn new(world: W, desc: PainterDescriptor<Ink, F>) -> Self {
         Self {
             world,
-            palette: palette.into_iter().collect(),
-            paint_fn,
-            selected,
+            desc,
             mouse_pos_prev: None,
             mouse_pos: None,
             is_painting: false,
@@ -47,15 +91,18 @@ where
     F: Fn(&mut W, u32, u32, Ink, &mut WorldImage),
 {
     fn draw(&mut self, image: &mut WorldImage) {
+        if self.desc.paint_fn.is_none() {
+            return;
+        }
         if self.is_painting {
-            if let Some(ref ink) = self.selected {
+            if let Some(ref ink) = self.desc.selected {
                 if let Some((x0, y0)) = self.mouse_pos_prev {
                     if let Some((x1, y1)) = self.mouse_pos {
                         for (x, y) in line_drawing::Bresenham::new(
                             (x0 as i32, y0 as i32),
                             (x1 as i32, y1 as i32),
                         ) {
-                            (self.paint_fn)(
+                            (self.desc.paint_fn.as_mut().unwrap())(
                                 &mut self.world,
                                 x as u32,
                                 y as u32,
@@ -88,11 +135,48 @@ where
 
     #[inline]
     fn keyboard_input(&mut self, event: KeyEvent, image: &mut WorldImage) {
-        for (key, ink) in &self.palette {
+        for (key, ink) in &self.desc.palette {
             if is_pressed(&event, *key) {
-                self.selected = Some(ink.clone());
+                self.desc.selected = Some(ink.clone());
             }
         }
+        if self.desc.paint_fn.is_some() {
+            if let Some(key_fill) = self.desc.key_fill {
+                if is_pressed(&event, key_fill) {
+                    if let Some(ref ink) = self.desc.selected {
+                        for y in 0..image.height() {
+                            for x in 0..image.width() {
+                                (self.desc.paint_fn.as_mut().unwrap())(
+                                    &mut self.world,
+                                    x,
+                                    y,
+                                    ink.clone(),
+                                    image,
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+            if let Some(key_fill_random) = self.desc.key_fill_random {
+                if is_pressed(&event, key_fill_random) && !self.desc.palette.is_empty() {
+                    use rand::seq::IteratorRandom;
+                    let mut rng = rand::rng();
+                    for y in 0..image.height() {
+                        for x in 0..image.width() {
+                            (self.desc.paint_fn.as_mut().unwrap())(
+                                &mut self.world,
+                                x,
+                                y,
+                                self.desc.palette.values().choose(&mut rng).unwrap().clone(),
+                                image,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
         self.world.keyboard_input(event, image);
     }
 
@@ -122,14 +206,13 @@ where
 
 pub trait WithPainterExt: World {
     #[inline]
-    fn with_painter<P, F, Ink>(self, palette: P, paint_fn: F, selected: Option<Ink>) -> impl World
+    fn with_painter<F, Ink>(self, desc: PainterDescriptor<Ink, F>) -> impl World
     where
-        P: IntoIterator<Item = (KeyCode, Ink)>,
         Ink: Clone,
         F: Fn(&mut Self, u32, u32, Ink, &mut WorldImage),
         Self: Sized,
     {
-        WithPainter::new(self, palette, paint_fn, selected)
+        WithPainter::new(self, desc)
     }
 }
 impl<W: World> WithPainterExt for W {}

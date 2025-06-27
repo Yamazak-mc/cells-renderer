@@ -10,5 +10,6 @@ futures = { version = "0.3.31" }
 winit = { version = "0.30.9" }
 wgpu = { version = "24.0.3" }
 line_drawing = "1.0.1"
+rand = "0.9.1"
 
 [dev-dependencies]

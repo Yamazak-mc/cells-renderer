@@ -1,4 +1,7 @@
-use cells_renderer::{prelude::*, util::*};
+use cells_renderer::{
+    prelude::*,
+    util::{painter::PainterDescriptor, *},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 enum Cell {
@@ -110,16 +113,23 @@ fn main() {
     App::new(
         AppConfigs::default(),
         World::new(32, 32).with_painter(
-            [
-                (KeyCode::Digit0, Cell::Dead),
-                (KeyCode::Digit1, Cell::Alive),
-            ],
-            |world, x, y, cell, image| {
-                let idx = world.calc_index(x, y);
-                world.cells[idx] = cell;
-                image.get_mut(x, y).unwrap().copy_from_slice(&cell.color());
-            },
-            Some(Cell::Alive),
+            PainterDescriptor::default()
+                .palette(
+                    [
+                        (KeyCode::Digit0, Cell::Dead),
+                        (KeyCode::Digit1, Cell::Alive),
+                    ]
+                    .into_iter()
+                    .collect(),
+                )
+                .paint_fn(Some(
+                    |world: &mut World, x, y, cell, image: &mut WorldImage| {
+                        let idx = world.calc_index(x, y);
+                        world.cells[idx] = cell;
+                        image.get_mut(x, y).unwrap().copy_from_slice(&cell.color());
+                    },
+                ))
+                .selected(Some(Cell::Alive)),
         ),
     )
     .run()
